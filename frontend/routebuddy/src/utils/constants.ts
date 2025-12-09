@@ -31,7 +31,7 @@ export const BusAmenities = {
   WashRoom: 128,
 } as const;
 
-export const API_BASE_URL = 'http://localhost:5172/api';
+export const API_BASE_URL = 'http://4.188.80.9:5000/api';
 export const ROUTES = {
   HOME: '/',
   LOGIN: '/login',
