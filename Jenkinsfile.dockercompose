@@ -1,0 +1,125 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKERHUB_USERNAME = 'YOUR_DOCKERHUB_USERNAME'  // Change this
+        BACKEND_IMAGE = "${DOCKERHUB_USERNAME}/routebuddy-backend"
+        FRONTEND_IMAGE = "${DOCKERHUB_USERNAME}/routebuddy-frontend"
+        GITHUB_REPO = 'https://github.com/YOUR_USERNAME/BusBookingRouteBuddy.git'  // Change this
+        AZURE_VM_HOST = 'YOUR_VM_IP_OR_DNS'  // Change this
+    }
+    
+    stages {
+        stage('Checkout Code') {
+            steps {
+                echo '📥 Fetching code from GitHub...'
+                git branch: 'main', url: "${GITHUB_REPO}"
+            }
+        }
+        
+        stage('Build and Push Images') {
+            steps {
+                echo '🔨 Building and pushing Docker images...'
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                            
+                            # Build and push backend
+                            cd backend
+                            docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} -t ${BACKEND_IMAGE}:latest .
+                            docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}
+                            docker push ${BACKEND_IMAGE}:latest
+                            
+                            # Build and push frontend
+                            cd ../frontend/routebuddy
+                            docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} -t ${FRONTEND_IMAGE}:latest .
+                            docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
+                            docker push ${FRONTEND_IMAGE}:latest
+                            
+                            docker logout
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy with Docker Compose') {
+            steps {
+                echo '🚀 Deploying to Azure VM using Docker Compose...'
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                            # Copy docker-compose.yml to VM
+                            scp -o StrictHostKeyChecking=no docker-compose.yml azureuser@${AZURE_VM_HOST}:/home/azureuser/
+                            
+                            # Deploy on VM
+                            ssh -o StrictHostKeyChecking=no azureuser@${AZURE_VM_HOST} << 'EOF'
+                                echo "Logging into Docker Hub..."
+                                echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                                
+                                cd /home/azureuser
+                                
+                                # Set environment variables
+                                export DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}
+                                export DB_CONNECTION_STRING="Server=tcp:routebuddy.database.windows.net,1433;Database=RouteBuddy;User Id=routebuddy_team;Password=Route@123;TrustServerCertificate=True;"
+                                export TOKEN_KEY="RouteBuddy-Super-Secret-JWT-Key-Minimum-32-Characters-Long-2024"
+                                
+                                # Stop and remove old containers
+                                docker-compose down || true
+                                
+                                # Pull latest images
+                                docker-compose pull
+                                
+                                # Start containers
+                                docker-compose up -d
+                                
+                                # Clean up
+                                docker image prune -f
+                                
+                                docker logout
+EOF
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                echo '🏥 Performing health check...'
+                script {
+                    sh '''
+                        sleep 10
+                        
+                        # Check if containers are running
+                        ssh -o StrictHostKeyChecking=no azureuser@${AZURE_VM_HOST} 'docker ps | grep routebuddy'
+                        
+                        # Test backend API
+                        curl -f http://${AZURE_VM_HOST}:5000 || echo "Backend health check failed"
+                        
+                        # Test frontend
+                        curl -f http://${AZURE_VM_HOST} || echo "Frontend health check failed"
+                    '''
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo '✅ Deployment Successful!'
+            echo "Backend API: http://${AZURE_VM_HOST}:5000"
+            echo "Frontend: http://${AZURE_VM_HOST}"
+            echo "Build Number: ${BUILD_NUMBER}"
+        }
+        failure {
+            echo '❌ Deployment Failed!'
+            echo 'Check the console output for errors'
+        }
+        always {
+            sh 'docker logout || true'
+            echo '🧹 Cleaning up workspace...'
+        }
+    }
+}
