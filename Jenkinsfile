@@ -61,7 +61,7 @@ pipeline {
                 echo '🚀 Deploying to Azure VM...'
                 script {
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ${AZURE_VM_USER}@${AZURE_VM_HOST} << EOF
+                        ssh -i /var/lib/jenkins/.ssh/azure-key.pem -o StrictHostKeyChecking=no ${AZURE_VM_USER}@${AZURE_VM_HOST} << EOF
 echo "Logging into Docker Hub..."
 echo ${DOCKERHUB_PASSWORD} | docker login -u ${DOCKERHUB_USERNAME} --password-stdin
 
