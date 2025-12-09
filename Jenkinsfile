@@ -76,7 +76,6 @@ docker pull ${FRONTEND_IMAGE}:latest
 echo "Starting Backend container..."
 docker run -d --name routebuddy-backend \\
   -p 5000:80 \\
-  -e ASPNETCORE_ENVIRONMENT=Production \\
   --restart unless-stopped \\
   ${BACKEND_IMAGE}:latest
 

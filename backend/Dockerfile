@@ -22,11 +22,4 @@ RUN dotnet publish "Kanini.RouteBuddy.Api.csproj" -c Release -o /app/publish
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-
-# Set environment to Production
-ENV ASPNETCORE_ENVIRONMENT=Production
-
-# Copy production config (will be mounted at runtime)
-COPY Kanini.RouteBuddy.Api/appsettings.Production.json ./appsettings.Production.json
-
 ENTRYPOINT ["dotnet", "Kanini.RouteBuddy.Api.dll"]
